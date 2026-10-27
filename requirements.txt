@@ -1,0 +1,6 @@
+genesis-world
+google-genai
+numpy
+pillow
+imageio
+imageio-ffmpeg
