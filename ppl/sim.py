@@ -1,5 +1,11 @@
 """Genesis scene, Franka controller (IK + joint interpolation) and video recorder."""
+import os
+import sys
+
 import numpy as np
+
+if sys.platform.startswith("linux"):   # headless servers / Colab need EGL for offscreen rendering
+    os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
 
 from .geometry import TopCamera
 
@@ -62,6 +68,11 @@ class Recorder:
 
     def save(self, path, fps=30):
         import imageio
+        if self.frames:
+            mean = float(np.mean(self.frames[len(self.frames) // 2]))
+            print(f"frames: {len(self.frames)}, mid-frame mean brightness: {mean:.1f}")
+            if mean < 5:
+                print("WARNING: frames are almost black -> offscreen rendering is not working (see notebook cell 'debug render').")
         try:
             imageio.mimsave(path, self.frames, fps=fps)
         except OSError as e:  # ffmpeg could not start: keep the frames instead of losing the run
