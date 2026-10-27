@@ -4,7 +4,6 @@
     python run.py --mock "..."   # canned plan, no API key needed (simulator smoke test)
 """
 import argparse
-import json
 
 from ppl.geometry import TopCamera
 from ppl.sim import BOXES, PLATES, Env
@@ -27,11 +26,8 @@ def tagged_image(env, top):
 
 def make_plan(env, top, instruction, mock):
     if mock:
-        plan = json.load(open(mock, encoding="utf-8")) if mock != "builtin" else {"steps": [
-            {"pick_label": "red", "pick_point": [0, 0], "place_label": "left plate", "place_point": [0, 0]}]}
-        from ppl.vlm import Step
-        return [Step(s["pick_label"], tuple(env.box_pos(s["pick_label"])[:2]), s["place_label"],
-                     PLATES[s["place_label"]], "mock") for s in plan["steps"]], "mock"
+        from ppl.vlm import Step   # canned plan: red box -> left plate, no API call
+        return [Step("red", tuple(env.box_pos("red")[:2]), "left plate", PLATES["left plate"], "mock")], "mock"
     from ppl.vlm import GeminiPlanner
     planner = GeminiPlanner(top)
     try:
@@ -87,7 +83,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("instruction", nargs="+")
     ap.add_argument("--out", default="demo.mp4")
-    ap.add_argument("--mock", nargs="?", const="builtin")
+    ap.add_argument("--mock", action="store_true")
     ap.add_argument("--cpu", action="store_true")
     ap.add_argument("--font")
     a = ap.parse_args()
