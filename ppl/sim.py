@@ -35,6 +35,7 @@ class Recorder:
     def __init__(self, cam, every=3, font_path=None):
         self.cam, self.every, self.font_path = cam, every, font_path
         self.frames, self.caption, self._n = [], "", 0
+        self.inset = None   # PIL image shown in the bottom-right corner (what the VLM sees)
 
     def tick(self):
         self._n += 1
@@ -42,22 +43,34 @@ class Recorder:
             self.frames.append(self._decorate(_np(self.cam.render()[0]).astype(np.uint8)))
 
     def _decorate(self, frame):
-        if not self.caption:
+        if not self.caption and self.inset is None:
             return frame
         from PIL import Image, ImageDraw, ImageFont
         img = Image.fromarray(frame)
+        if self.inset is not None:
+            img.paste(self.inset, (img.width - self.inset.width - 8, img.height - self.inset.height - 8))
         try:
             font = ImageFont.truetype(self.font_path, 22) if self.font_path else ImageFont.load_default()
         except OSError:
             font = ImageFont.load_default()
         d = ImageDraw.Draw(img)
+        if not self.caption:
+            return np.asarray(img)
         d.rectangle([0, 0, img.width, 64], fill=(0, 0, 0))
         d.multiline_text((10, 8), self.caption, fill=(255, 255, 255), font=font)
         return np.asarray(img)
 
     def save(self, path, fps=30):
         import imageio
-        imageio.mimsave(path, self.frames, fps=fps)
+        try:
+            imageio.mimsave(path, self.frames, fps=fps)
+        except OSError as e:  # ffmpeg could not start: keep the frames instead of losing the run
+            import os
+            d = os.path.splitext(path)[0] + "_frames"
+            os.makedirs(d, exist_ok=True)
+            for i, f in enumerate(self.frames):
+                imageio.imwrite(os.path.join(d, f"{i:05d}.png"), f)
+            print(f"video write failed ({e}); wrote PNG frames to {d}")
 
 
 class Env:
@@ -86,7 +99,7 @@ class Env:
             res=(top.res, top.res), pos=(top.cx, top.cy, top.height),
             lookat=(top.cx, top.cy, 0.0), up=(1.0, 0.0, 0.0), fov=top.fov_deg, GUI=False)
         self.view_cam = self.scene.add_camera(
-            res=(960, 540), pos=(-0.6, 0.0, 0.95), lookat=(0.5, 0.0, 0.1), fov=55, GUI=False)
+            res=(960, 540), pos=(1.3, -0.85, 0.85), lookat=(0.45, 0.0, 0.05), fov=45, GUI=False)
         self.scene.build()
         self.rec = Recorder(self.view_cam, font_path=font_path)
         self.motors = np.arange(7)

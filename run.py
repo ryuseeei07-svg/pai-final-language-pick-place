@@ -42,6 +42,17 @@ def make_plan(env, top, instruction, mock):
         return planner.plan_marks(img, instruction, objects), "marks"
 
 
+def vlm_view(env, top, step, size=250):
+    """Top-down image with the pick (red ring) and place (green ring) the plan chose."""
+    from PIL import Image, ImageDraw
+    img = Image.fromarray(env.top_image())
+    d = ImageDraw.Draw(img)
+    for xy, col in ((step.pick_xy, (255, 0, 0)), (step.place_xy, (0, 220, 0))):
+        u, v = top.world_to_pixel(*xy)
+        d.ellipse([u - 22, v - 22, u + 22, v + 22], outline=col, width=5)
+    return img.resize((size, size))
+
+
 def execute(env, top, instruction, mock=None):
     env.rec.caption = f"Instruction: {instruction}"
     env.step(30)
@@ -50,6 +61,7 @@ def execute(env, top, instruction, mock=None):
     results = []
     for k, s in enumerate(steps, 1):
         env.rec.caption = f"Instruction: {instruction}\n[{mode}] step {k}/{len(steps)}: {s.pick_label} -> {s.place_label}"
+        env.rec.inset = vlm_view(env, top, s)
         got = env.pick(s.pick_xy)
         if got is None and mode == "points":
             # VLM point missed every box: ask again with numbered marks
@@ -65,6 +77,7 @@ def execute(env, top, instruction, mock=None):
         err = env.place(name, s.place_xy)
         results.append((name, grasp, round(err, 3)))
     print("results:", results)
+    env.rec.inset = None
     env.rec.caption = "done"
     env.step(60)
     return results
