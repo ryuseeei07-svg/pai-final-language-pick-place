@@ -73,8 +73,13 @@ class Recorder:
             print(f"frames: {len(self.frames)}, mid-frame mean brightness: {mean:.1f}")
             if mean < 5:
                 print("WARNING: frames are almost black -> offscreen rendering is not working (see notebook cell 'debug render').")
+        if self.frames:   # a still from the middle of the run, to tell "black frames" from "black video"
+            preview = os.path.splitext(path)[0] + "_preview.png"
+            imageio.imwrite(preview, self.frames[len(self.frames) // 2])
+            print("preview frame:", preview)
         try:
-            imageio.mimsave(path, self.frames, fps=fps)
+            imageio.mimsave(path, self.frames, fps=fps, codec="libx264", pixelformat="yuv420p", macro_block_size=2)
+            print("video:", path, os.path.getsize(path), "bytes")
         except OSError as e:  # ffmpeg could not start: keep the frames instead of losing the run
             import os
             d = os.path.splitext(path)[0] + "_frames"
