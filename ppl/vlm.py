@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 from .geometry import TopCamera, relation_to_world
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-3.8-flash"
 
 POINT_PROMPT = """You control a robot arm above a table. The image is a top-down view; the robot base is at the bottom edge.
 Image left/right/up/down are what you see in the image.
