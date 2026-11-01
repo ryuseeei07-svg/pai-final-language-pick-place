@@ -56,8 +56,7 @@ def execute(env, top, instruction, mock=None):
         steps, mode = make_plan(env, top, instruction, mock)
     except Exception as e:   # keep the run (and the video) alive if one instruction cannot be planned
         print(f"planning failed for '{instruction}': {e}")
-        env.rec.caption = f"Instruction: {instruction}
-(planning failed)"
+        env.rec.caption = f"Instruction: {instruction}\n(planning failed)"
         env.step(60)
         return [(instruction, "planning failed")]
     print(f"plan ({mode}):", steps)
