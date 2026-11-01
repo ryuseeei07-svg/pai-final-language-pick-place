@@ -1,0 +1,102 @@
+{
+ "0:一番大きい赤い箱を、左の皿に置いて": {
+  "mode": "points",
+  "model": "gemini-3.5-flash",
+  "instruction": "一番大きい赤い箱を、左の皿に置いて",
+  "steps": [
+   {
+    "pick_label": "largest red box",
+    "pick_xy": [
+     0.45070806656037077,
+     0.11970898121052839
+    ],
+    "place_label": "left plate",
+    "place_xy": [
+     0.4021985447626402,
+     0.2644551349618209
+    ],
+    "reason": "The lower-left red box is larger than the upper-left one, so it is placed on the left plate."
+   }
+  ]
+ },
+ "1:小さい青い箱を、緑の箱の右隣に置いて": {
+  "mode": "points",
+  "model": "gemini-3.5-flash",
+  "instruction": "小さい青い箱を、緑の箱の右隣に置いて",
+  "steps": [
+   {
+    "pick_label": "small blue box",
+    "pick_xy": [
+     0.6189265695686296,
+     -0.1768250310691465
+    ],
+    "place_label": "table space right of green box",
+    "place_xy": [
+     0.5500743450815282,
+     -0.05868087314241587
+    ],
+    "reason": "Move the small blue box to the right side of the green box."
+   }
+  ]
+ },
+ "2:残りの赤い箱を、右の皿に置いて": {
+  "mode": "points",
+  "model": "gemini-3.5-flash",
+  "instruction": "残りの赤い箱を、右の皿に置いて",
+  "steps": [
+   {
+    "pick_label": "remaining red box",
+    "pick_xy": [
+     0.5993662785211575,
+     0.1987325570423151
+    ],
+    "place_label": "right plate",
+    "place_xy": [
+     0.4021985447626402,
+     -0.2636727233199219
+    ],
+    "reason": "Move the remaining red box to the center of the right plate as requested."
+   }
+  ]
+ },
+ "3:黄色い箱を、緑の箱の左隣に置いて": {
+  "mode": "marks",
+  "model": "gemini-3.5-flash",
+  "instruction": "黄色い箱を、緑の箱の左隣に置いて",
+  "steps": [
+   {
+    "pick_label": "yellow",
+    "pick_xy": [
+     0.6800000071525574,
+     0.05999999865889549
+    ],
+    "place_label": "left_of green",
+    "place_xy": [
+     0.5490171909332275,
+     0.10269162058830261
+    ],
+    "reason": "黄色い箱(5)を緑の箱(4)の左隣に移動させるため"
+   }
+  ]
+ },
+ "4:大きい青い箱を、右の皿に置いて": {
+  "mode": "points",
+  "model": "gemini-3.5-flash",
+  "instruction": "大きい青い箱を、右の皿に置いて",
+  "steps": [
+   {
+    "pick_label": "large blue box",
+    "pick_xy": [
+     0.4499256549184718,
+     -0.09858386687925864
+    ],
+    "place_label": "right plate",
+    "place_xy": [
+     0.4021985447626402,
+     -0.2636727233199219
+    ],
+    "reason": "Place the large blue box onto the right plate as instructed."
+   }
+  ]
+ }
+}
