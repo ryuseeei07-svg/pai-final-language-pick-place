@@ -93,14 +93,25 @@ class GeminiPlanner:
         self.model = model or os.environ.get("GEMINI_MODEL", DEFAULT_MODEL)
         self.cam = cam
 
-    def _ask(self, image, prompt: str) -> str:
+    def _ask(self, image, prompt: str, retries: int = 6) -> str:
+        """Call Gemini, backing off on overload / rate-limit errors (503, 429, ...)."""
+        import time
         from google.genai import types
-        resp = self.client.models.generate_content(
-            model=self.model,
-            contents=[types.Part.from_bytes(data=_png(image), mime_type="image/png"), prompt],
-            config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.0),
-        )
-        return resp.text
+        for attempt in range(retries + 1):
+            try:
+                resp = self.client.models.generate_content(
+                    model=self.model,
+                    contents=[types.Part.from_bytes(data=_png(image), mime_type="image/png"), prompt],
+                    config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.0),
+                )
+                return resp.text
+            except Exception as e:
+                transient = getattr(e, "code", None) in (429, 500, 502, 503, 504)
+                if not transient or attempt == retries:
+                    raise
+                wait = min(5 * 2 ** attempt, 60)
+                print(f"Gemini busy ({getattr(e, 'code', '?')}), retry {attempt + 1}/{retries} in {wait}s")
+                time.sleep(wait)
 
     def plan_points(self, image, instruction: str) -> list[Step]:
         return parse_point_plan(self._ask(image, POINT_PROMPT.format(instruction=instruction)), self.cam)

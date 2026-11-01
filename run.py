@@ -52,7 +52,14 @@ def vlm_view(env, top, step, size=250):
 def execute(env, top, instruction, mock=None):
     env.rec.caption = f"Instruction: {instruction}"
     env.step(30)
-    steps, mode = make_plan(env, top, instruction, mock)
+    try:
+        steps, mode = make_plan(env, top, instruction, mock)
+    except Exception as e:   # keep the run (and the video) alive if one instruction cannot be planned
+        print(f"planning failed for '{instruction}': {e}")
+        env.rec.caption = f"Instruction: {instruction}
+(planning failed)"
+        env.step(60)
+        return [(instruction, "planning failed")]
     print(f"plan ({mode}):", steps)
     results = []
     for k, s in enumerate(steps, 1):
@@ -90,7 +97,9 @@ if __name__ == "__main__":
     a = ap.parse_args()
     top = TopCamera()
     env = Env(top, backend="cpu" if a.cpu else "gpu", font_path=a.font)
-    for ins in a.instruction:
-        execute(env, top, ins, a.mock)
-    env.rec.save(a.out, fps=a.fps)
-    print("saved", a.out)
+    try:
+        for ins in a.instruction:
+            execute(env, top, ins, a.mock)
+    finally:   # always keep whatever was recorded
+        env.rec.save(a.out, fps=a.fps)
+        print("saved", a.out)
