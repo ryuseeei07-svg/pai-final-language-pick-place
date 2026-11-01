@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 from .geometry import TopCamera, relation_to_world
 
-DEFAULT_MODEL = "gemini-3.8-flash"
+DEFAULT_MODELS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite"]
 
 POINT_PROMPT = """You control a robot arm above a table. The image is a top-down view; the robot base is at the bottom edge.
 Image left/right/up/down are what you see in the image.
@@ -41,6 +41,15 @@ class Step:
     place_label: str
     place_xy: tuple[float, float]
     reason: str = ""
+
+    def to_dict(self) -> dict:
+        return {"pick_label": self.pick_label, "pick_xy": [float(v) for v in self.pick_xy],
+                "place_label": self.place_label, "place_xy": [float(v) for v in self.place_xy],
+                "reason": self.reason}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Step":
+        return cls(d["pick_label"], tuple(d["pick_xy"]), d["place_label"], tuple(d["place_xy"]), d.get("reason", ""))
 
 
 def _extract_json(text: str) -> dict:
@@ -89,29 +98,36 @@ class GeminiPlanner:
         key = os.environ.get("GEMINI_API_KEY")
         if not key:
             raise RuntimeError("Set GEMINI_API_KEY (Colab secret or environment variable).")
-        self.client = genai.Client(api_key=key)
-        self.model = model or os.environ.get("GEMINI_MODEL", DEFAULT_MODEL)
+        from google.genai import types
+        self.client = genai.Client(api_key=key, http_options=types.HttpOptions(timeout=60_000))   # ms
+        first = model or os.environ.get("GEMINI_MODEL")
+        self.models = [first] + [m for m in DEFAULT_MODELS if m != first] if first else list(DEFAULT_MODELS)
         self.cam = cam
 
-    def _ask(self, image, prompt: str, retries: int = 6) -> str:
-        """Call Gemini, backing off on overload / rate-limit errors (503, 429, ...)."""
+    def _ask(self, image, prompt: str, retries: int = 2) -> str:
+        """Call Gemini; on overload / rate-limit / timeout retry briefly, then try the next model."""
         import time
         from google.genai import types
-        for attempt in range(retries + 1):
-            try:
-                resp = self.client.models.generate_content(
-                    model=self.model,
-                    contents=[types.Part.from_bytes(data=_png(image), mime_type="image/png"), prompt],
-                    config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.0),
-                )
-                return resp.text
-            except Exception as e:
-                transient = getattr(e, "code", None) in (429, 500, 502, 503, 504)
-                if not transient or attempt == retries:
-                    raise
-                wait = min(5 * 2 ** attempt, 60)
-                print(f"Gemini busy ({getattr(e, 'code', '?')}), retry {attempt + 1}/{retries} in {wait}s")
-                time.sleep(wait)
+        last = None
+        for model in self.models:
+            for attempt in range(retries + 1):
+                try:
+                    resp = self.client.models.generate_content(
+                        model=model,
+                        contents=[types.Part.from_bytes(data=_png(image), mime_type="image/png"), prompt],
+                        config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.0),
+                    )
+                    self.last_model = model
+                    return resp.text
+                except Exception as e:
+                    last = e
+                    code = getattr(e, "code", None)
+                    if code not in (429, 500, 502, 503, 504, None):
+                        raise   # e.g. 404 (model gone) or 400: retrying will not help
+                    print(f"Gemini {model}: error {code or type(e).__name__}, attempt {attempt + 1}/{retries + 1}")
+                    time.sleep(3 * (attempt + 1))
+            print(f"giving up on {model}, trying the next model")
+        raise last
 
     def plan_points(self, image, instruction: str) -> list[Step]:
         return parse_point_plan(self._ask(image, POINT_PROMPT.format(instruction=instruction)), self.cam)

@@ -4,6 +4,8 @@
     python run.py --mock "..."   # canned plan, no API key needed (simulator smoke test)
 """
 import argparse
+import json
+import os
 
 from ppl.geometry import TopCamera
 from ppl.sim import BOXES, PLATES, Env
@@ -24,18 +26,36 @@ def tagged_image(env, top):
     return np.asarray(img), objects
 
 
-def make_plan(env, top, instruction, mock):
+CACHE = "plan_cache.json"
+
+
+def make_plan(env, top, instruction, mock, key=None, use_cache=True):
+    """Plan with Gemini; a successful plan is stored so a re-run can replay it without the API."""
+    from ppl.vlm import Step
+    cache = json.load(open(CACHE, encoding="utf-8")) if os.path.exists(CACHE) else {}
+    if not mock and use_cache and key in cache:
+        c = cache[key]
+        print(f"plan from cache ({c['mode']}, model {c.get('model')})")
+        return [Step.from_dict(d) for d in c["steps"]], c["mode"]
+    steps, mode, model = _plan_with_gemini(env, top, instruction, mock)
+    if not mock:
+        cache[key] = {"mode": mode, "model": model, "instruction": instruction, "steps": [s.to_dict() for s in steps]}
+        json.dump(cache, open(CACHE, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    return steps, mode
+
+
+def _plan_with_gemini(env, top, instruction, mock):
     if mock:
         from ppl.vlm import Step   # canned plan: red box -> left plate, no API call
-        return [Step("red_large", tuple(env.box_pos("red_large")[:2]), "left plate", PLATES["left plate"], "mock")], "mock"
+        return [Step("red_large", tuple(env.box_pos("red_large")[:2]), "left plate", PLATES["left plate"], "mock")], "mock", "mock"
     from ppl.vlm import GeminiPlanner
     planner = GeminiPlanner(top)
     try:
-        return planner.plan_points(env.top_image(), instruction), "points"
+        return planner.plan_points(env.top_image(), instruction), "points", planner.last_model
     except Exception as e:  # malformed JSON, API error, ...
         print("point plan failed, falling back to marks:", e)
         img, objects = tagged_image(env, top)
-        return planner.plan_marks(img, instruction, objects), "marks"
+        return planner.plan_marks(img, instruction, objects), "marks", planner.last_model
 
 
 def vlm_view(env, top, step, size=250):
@@ -49,11 +69,11 @@ def vlm_view(env, top, step, size=250):
     return img.resize((size, size))
 
 
-def execute(env, top, instruction, mock=None):
+def execute(env, top, instruction, mock=None, key=None, use_cache=True):
     env.rec.caption = f"Instruction: {instruction}"
     env.step(30)
     try:
-        steps, mode = make_plan(env, top, instruction, mock)
+        steps, mode = make_plan(env, top, instruction, mock, key, use_cache)
     except Exception as e:   # keep the run (and the video) alive if one instruction cannot be planned
         print(f"planning failed for '{instruction}': {e}")
         env.rec.caption = f"Instruction: {instruction}\n(planning failed)"
@@ -92,13 +112,14 @@ if __name__ == "__main__":
     ap.add_argument("--mock", action="store_true")
     ap.add_argument("--cpu", action="store_true")
     ap.add_argument("--fps", type=int, default=24)
+    ap.add_argument("--no-cache", action="store_true")
     ap.add_argument("--font")
     a = ap.parse_args()
     top = TopCamera()
     env = Env(top, backend="cpu" if a.cpu else "gpu", font_path=a.font)
     try:
-        for ins in a.instruction:
-            execute(env, top, ins, a.mock)
+        for i, ins in enumerate(a.instruction):
+            execute(env, top, ins, a.mock, key=f"{i}:{ins}", use_cache=not a.no_cache)
     finally:   # always keep whatever was recorded
         env.rec.save(a.out, fps=a.fps)
         print("saved", a.out)
