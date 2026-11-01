@@ -27,7 +27,7 @@ def tagged_image(env, top):
 def make_plan(env, top, instruction, mock):
     if mock:
         from ppl.vlm import Step   # canned plan: red box -> left plate, no API call
-        return [Step("red", tuple(env.box_pos("red")[:2]), "left plate", PLATES["left plate"], "mock")], "mock"
+        return [Step("red_large", tuple(env.box_pos("red_large")[:2]), "left plate", PLATES["left plate"], "mock")], "mock"
     from ppl.vlm import GeminiPlanner
     planner = GeminiPlanner(top)
     try:
@@ -85,11 +85,12 @@ if __name__ == "__main__":
     ap.add_argument("--out", default="demo.mp4")
     ap.add_argument("--mock", action="store_true")
     ap.add_argument("--cpu", action="store_true")
+    ap.add_argument("--fps", type=int, default=24)
     ap.add_argument("--font")
     a = ap.parse_args()
     top = TopCamera()
     env = Env(top, backend="cpu" if a.cpu else "gpu", font_path=a.font)
     for ins in a.instruction:
         execute(env, top, ins, a.mock)
-    env.rec.save(a.out)
+    env.rec.save(a.out, fps=a.fps)
     print("saved", a.out)

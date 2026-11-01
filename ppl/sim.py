@@ -19,11 +19,12 @@ HOME = np.array([0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785, 0.04, 0.04])
 
 # name -> (rgb, footprint [m], (x, y)); all boxes share one height so the camera map is exact.
 BOXES = {
-    "red": ((0.9, 0.1, 0.1), 0.05, (0.45, 0.12)),
-    "green": ((0.1, 0.7, 0.2), 0.03, (0.55, 0.00)),
-    "blue": ((0.1, 0.2, 0.9), 0.04, (0.45, -0.10)),
-    "yellow": ((0.95, 0.85, 0.1), 0.05, (0.62, 0.17)),
-    "purple": ((0.6, 0.2, 0.8), 0.03, (0.62, -0.17)),
+    "red_large": ((0.9, 0.1, 0.1), 0.05, (0.45, 0.12)),
+    "red_small": ((0.9, 0.1, 0.1), 0.03, (0.60, 0.20)),
+    "blue_large": ((0.1, 0.2, 0.9), 0.05, (0.45, -0.10)),
+    "blue_small": ((0.1, 0.2, 0.9), 0.03, (0.62, -0.18)),
+    "green": ((0.1, 0.7, 0.2), 0.04, (0.55, 0.00)),
+    "yellow": ((0.95, 0.85, 0.1), 0.04, (0.68, 0.06)),
 }
 PLATES = {
     "left plate": (0.40, 0.27),
@@ -213,7 +214,17 @@ class Env:
         self.move_hand((x, y, APPROACH_Z), steps=80)
         return name, "attached"
 
+    def free_spot(self, xy, name):
+        """Shift the target along y so the box does not land on top of another one."""
+        xy = np.asarray(xy, dtype=float)
+        for dy in (0.0, 0.05, -0.05, 0.10, -0.10):
+            cand = xy + np.array([0.0, dy])
+            if all(np.linalg.norm(self.box_pos(n)[:2] - cand) > 0.045 for n in self.boxes if n != name):
+                return cand
+        return xy
+
     def place(self, name, xy):
+        xy = self.free_spot(xy, name)
         z = self.support_height(xy) + BOX_H / 2 + HAND_OFFSET + 0.005
         self.move_hand((xy[0], xy[1], APPROACH_Z), steps=100)
         self.move_hand((xy[0], xy[1], z))
