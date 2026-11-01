@@ -56,7 +56,10 @@ def _extract_json(text: str) -> dict:
     text = text.strip()
     if text.startswith("```"):
         text = text.split("\n", 1)[1].rsplit("```", 1)[0]
-    return json.loads(text)
+    data = json.loads(text)
+    if isinstance(data, list):   # the model sometimes returns the bare list of steps
+        data = {"steps": data}
+    return data
 
 
 def parse_point_plan(text: str, cam: TopCamera) -> list[Step]:
