@@ -87,3 +87,9 @@ def test_step_round_trip():
     from ppl.vlm import Step
     s = Step("red_large", (0.45, 0.12), "left plate", (0.4, 0.27), "r")
     assert Step.from_dict(s.to_dict()) == s
+
+
+def test_bare_list_is_accepted():
+    text = '[{"pick_label": "red", "pick_point": [500, 500], "place_label": "plate", "place_point": [500, 700]}]'
+    (step,) = parse_point_plan(text, cam)
+    assert step.pick_xy == pytest.approx((0.5, 0.0))
