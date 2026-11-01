@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Physical AI 応用1 最終課題 レポート</title>
+<style>
+  @page { size: A4; margin: 12mm 14mm; }
+  body { font-family: "Yu Gothic", "Meiryo", sans-serif; font-size: 9.8pt; line-height: 1.5; color: #1b1b1b; }
+  h1 { font-size: 17pt; margin: 0 0 2mm; }
+  h2 { font-size: 11.5pt; break-after: avoid; margin: 4mm 0 1.5mm; padding-left: 2.5mm; border-left: 3px solid #4a6a3d; }
+  p, ul, ol { margin: 1mm 0 1.5mm; }
+  ul, ol { padding-left: 5mm; }
+  .sub { color: #555; font-size: 9.5pt; margin-bottom: 3mm; }
+  table { border-collapse: collapse; width: 100%; font-size: 9pt; margin: 1.5mm 0; }
+  table { break-inside: avoid; }
+  h2.newpage { break-before: page; }
+  th, td { border: 1px solid #bbb; padding: 1mm 1.8mm; vertical-align: top; }
+  th { background: #eef1ea; text-align: left; }
+  .flow { display: flex; align-items: stretch; gap: 1.5mm; margin: 2mm 0; font-size: 9pt; }
+  .flow div { flex: 1; border: 1px solid #4a6a3d; border-radius: 2mm; padding: 1.5mm 2mm; background: #f6f8f3; }
+  .flow .arrow { flex: 0 0 auto; border: none; background: none; align-self: center; padding: 0; color: #4a6a3d; font-weight: bold; }
+  .figs { display: flex; gap: 3mm; margin: 2mm 0; }
+  .figs figure { flex: 1; margin: 0; }
+  .figs img { width: 78%; border: 1px solid #ccc; }
+  figcaption { font-size: 8.5pt; color: #555; margin-top: 0.5mm; }
+  code { font-family: Consolas, monospace; font-size: 9pt; background: #f1f1f1; padding: 0 1mm; }
+  .note { background: #fbf6e6; border: 1px solid #e4d6a0; padding: 1.5mm 2.5mm; font-size: 9.3pt; }
+</style>
+</head>
+<body>
+
+<h1>言語指示で箱を片付けるロボットアーム</h1>
+<div class="sub">Physical AI 応用1 最終課題 ／ VLM(Gemini)が画像と指示から「何を・どこへ」を決め、Genesis上のFranka Pandaが実行する</div>
+
+<h2>1. 概要と目的</h2>
+<p>「一番大きい赤い箱を左の皿に置いて」「小さい青い箱を緑の箱の右隣に」のように、<b>大きさ・色・位置関係を含む自然な指示</b>でロボットアームに箱を並べ替えさせる。机の真上のカメラ画像と指示文をVLMに渡し、掴む箱と置く場所を画像上の点として返してもらい、それを世界座標に変換してアームを動かす。</p>
+<p>目的は、(1) 色だけで物体が決まらない場面(同色で大小の箱が2組ある)で、VLMによる画像の理解を実際に使うこと、(2) VLMの出力が失敗したり外れたりしても止まらない、実際に動かし続けられる仕組みにすること、の2点である。動画は等倍で、倍速再生はしていない。</p>
+
+<h2>2. システム構成</h2>
+<div class="flow">
+  <div><b>① 観測</b><br>真上カメラ画像<br>(640×640)</div><div class="arrow">→</div>
+  <div><b>② 計画 (Gemini)</b><br>指示+画像 → 掴む箱・置く場所を<code>[y,x]</code>の点で出力</div><div class="arrow">→</div>
+  <div><b>③ 座標変換</b><br>画像上の点 → 机上の<br>(x, y) [m]</div><div class="arrow">→</div>
+  <div><b>④ 実行</b><br>IK+関節補間で<br>上から把持・運搬</div>
+</div>
+<ul>
+  <li><b>環境</b>: Genesis 1.4.5(Colab 無料枠 T4)、Franka Panda、箱6個(赤の大小・青の大小・緑・黄)と皿2枚。</li>
+  <li><b>座標変換</b>: カメラは真下向きで、全ての箱の上面の高さが同じ(4cm)なので、画像座標と机上座標は単純な線形変換で結べる(<code>ppl/geometry.py</code>)。往復変換と向きは単体テストで確認した。</li>
+  <li><b>把持</b>: 箱の上空へIKで移動 → 降下 → グリッパを閉じる → 持ち上げ。把持の成否は、持ち上げ後の箱の高さで判定する。</li>
+</ul>
+
+<h2>3. 工夫した点</h2>
+<ol>
+  <li><b>同色・異サイズの場面設計</b>:色名だけでは対象が決まらないため、「一番大きい」「小さい」「残りの」といった<b>比較・状態の理解</b>が必須になる。「残りの赤い箱」は、1本目で大きい赤い箱が動いた後の画像を見て初めて決まる。</li>
+  <li><b>相対位置の指示</b>:「緑の箱の右隣」「左隣」を、画像の左右として解釈させ、約9cm離れた空き地点を返させる。</li>
+  <li><b>3段の保険</b>(止まらないための設計):
+    <ul>
+      <li>VLMの点が、どの箱にも5cm以内に当たらない、または出力が解釈できない → 各物体に番号を描いた画像で聞き直す(番号選択方式、<code>marks</code>)。</li>
+      <li>物理的に掴めない → 箱をハンドに追従させる方式に切り替える。今回は5回とも切り替わらず、全て物理把持で成功した。</li>
+      <li>Geminiが混雑・制限中(503/429) → 再試行し、次のモデルへ自動で切り替える(3.8 → 3.7 → 3.5 → 3.1-lite)。1回の呼び出しは60秒で打ち切る。</li>
+    </ul></li>
+  <li><b>配置の衝突回避</b>:同じ皿に複数の箱を置くとき、既存の箱とぶつからないよう目標をずらす(右の皿に赤の小箱と青の大箱が共存)。</li>
+  <li><b>説明のしやすさ</b>:動画の右下に「VLMが選んだ箱(赤い輪)と置き場所(緑の輪)」を重ね、字幕に指示と使用方式(<code>points</code>/<code>marks</code>)を出した。</li>
+  <li><b>再現性</b>:成功した計画を<code>plan_cache.json</code>に保存し、再実行ではAPIを使わずに同じ動作を再生できる。APIキーはコードに含めず、環境変数で渡す。</li>
+</ol>
+
+<h2 class="newpage">4. 結果</h2>
+<p>5本の指示を続けて実行した(1本ごとに、前の結果の盤面から開始)。全て最後まで実行でき、目標との位置誤差は2〜5mmだった。</p>
+<table>
+  <tr><th>#</th><th>指示</th><th>動かした箱</th><th>方式</th><th>把持</th><th>誤差</th></tr>
+  <tr><td>1</td><td>一番大きい赤い箱を、左の皿に置いて</td><td>赤(大)</td><td>points</td><td>物理</td><td>4 mm</td></tr>
+  <tr><td>2</td><td>小さい青い箱を、緑の箱の右隣に置いて</td><td>青(小)</td><td>points</td><td>物理</td><td>2 mm</td></tr>
+  <tr><td>3</td><td>残りの赤い箱を、右の皿に置いて</td><td>赤(小)</td><td>points</td><td>物理</td><td>4 mm</td></tr>
+  <tr><td>4</td><td>黄色い箱を、緑の箱の左隣に置いて</td><td>黄</td><td>marks</td><td>物理</td><td>4 mm</td></tr>
+  <tr><td>5</td><td>大きい青い箱を、右の皿に置いて</td><td>青(大)</td><td>points</td><td>物理</td><td>5 mm</td></tr>
+</table>
+<p>使われたモデルは5本とも <code>gemini-3.5-flash</code> だった(<code>3.8-flash</code> と <code>3.7-flash</code> は、毎回レート制限(429)のため自動で切り替わった)。</p>
+<div class="figs">
+  <figure><img src="figures/step3.png"><figcaption>3本目の実行中。左の皿に赤(大)が載り、右下にVLMの選択(赤い輪=掴む箱、緑の輪=置き場所)が表示される。</figcaption></figure>
+  <figure><img src="figures/final_state.png"><figcaption>5本目の実行中。右の皿に赤(小)と青(大)が共存し、左の皿には赤(大)が残っている。</figcaption></figure>
+</div>
+
+<h2>5. 失敗・限界と考察</h2>
+<ul>
+  <li><b>4本目だけ <code>marks</code> に切り替わった理由</b>:Geminiが<code>{"steps": [...]}</code>ではなく、リストそのものを返し、私の解析がそれに対応していなかったため(<code>list indices must be integers</code>)。保険の方式で正しく実行できたことは、設計の効果の確認にもなった。原因は、リストも受け付ける形に修正し、テストを追加した。ただし、修正後に4本目をやり直してはいない(動画は修正前の挙動のまま)。</li>
+  <li><b>実行環境の問題</b>:当初、実行がセル内で1時間以上止まって見えた。原因は、Geminiへの呼び出しに再試行間隔はあったが、打ち切り時間がなかったことと、出力が最後まで表示されない書き方をしていたこと。タイムアウトとモデル切り替えを入れ、<code>-u</code>で進行を見えるようにした。</li>
+  <li><b>評価が甘い点</b>:(a) VLMが返した掴む位置は、最も近い箱の中心に補正している(5cm以内)。この補正は、シミュレータ内の箱の位置を使っているため、現実のロボットにはそのまま使えない。(b) 成否と誤差の評価も、シミュレータが持つ真の位置で行った。(c) 実行は各指示1回で、成功率の統計は取っていない。</li>
+  <li><b>未実装</b>:把持に失敗したとき、画像から原因をVLMに推定させて、やり直す機能。「机を片付けて」のような抽象的な指示を複数手順に分解する指示も試していない。</li>
+  <li><b>今後</b>:箱の位置を画像だけから決める(補正をなくす)、実機のカメラ画像への展開(照明や影、カメラのずれの影響を調べる)、失敗の自己修正。</li>
+</ul>
+
+<h2>6. 成果物・再現</h2>
+<ul>
+  <li>コード: https://github.com/ryuseeei07-svg/pai-final-language-pick-place(<code>notebooks/colab_demo.ipynb</code> を Colab(GPU)で実行。Gemini の API キーは Colab のシークレット <code>GEMINI_API_KEY</code> に登録)。</li>
+  <li>動画: 約1分(公式のOP・EDを含む)、等倍。YouTube にアップロードし、そのURLを omnicampus のフォームに提出する。</li>
+  <li>参考:課題で示されたサンプル「ChatGPT APIによる自然言語ロボット操作」の、自然言語でロボットを動かすという発想を参考にした。構成(画像+指示からの位置推定、同色異サイズの場面設計、3段の保険、Genesis上での実行)は、本課題で設計・実装したものである。</li>
+  <li>実装には、AIコーディング支援(Claude Code)を利用した。</li>
+</ul>
+
+</body>
+</html>
